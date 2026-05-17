@@ -1,0 +1,878 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Offline precipitation prediction dashboard using machine learning on NetCDF climate data.">
+    <title>Precipitation Predictor</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <style>
+        /* ── RESET & BASE ───────────────────────── */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #0a0e1a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        /* ── ANIMATED BACKGROUND ────────────────── */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(ellipse 600px 400px at 15% 20%, rgba(99, 102, 241, .12), transparent),
+                radial-gradient(ellipse 500px 500px at 85% 70%, rgba(52, 211, 153, .10), transparent),
+                radial-gradient(ellipse 400px 350px at 50% 50%, rgba(244, 114, 182, .06), transparent);
+            z-index: -1;
+            animation: bgShift 20s ease-in-out infinite alternate;
+        }
+
+        @keyframes bgShift {
+            0% {
+                opacity: .7;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        /* ── HEADER / HERO ──────────────────────── */
+        .hero {
+            text-align: center;
+            padding: 3.5rem 1.5rem 2rem;
+            position: relative;
+        }
+
+        .hero h1 {
+            font-size: clamp(1.8rem, 4vw, 2.6rem);
+            font-weight: 800;
+            background: linear-gradient(135deg, #6ee7b7 0%, #818cf8 50%, #f472b6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            letter-spacing: -0.02em;
+        }
+
+        .hero p {
+            color: #94a3b8;
+            margin-top: .5rem;
+            font-size: .95rem;
+        }
+
+        .hero .badge {
+            display: inline-block;
+            margin-top: .75rem;
+            padding: .3rem .9rem;
+            font-size: .75rem;
+            font-weight: 600;
+            color: #6ee7b7;
+            border: 1px solid rgba(110, 231, 183, .25);
+            border-radius: 999px;
+            background: rgba(110, 231, 183, .08);
+            letter-spacing: .04em;
+            text-transform: uppercase;
+        }
+
+        /* ── LAYOUT ─────────────────────────────── */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1.25rem 3rem;
+        }
+
+        /* ── GLASS CARD ─────────────────────────── */
+        .card {
+            background: rgba(15, 23, 42, .65);
+            border: 1px solid rgba(255, 255, 255, .06);
+            border-radius: 16px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            transition: border-color .3s, box-shadow .3s;
+        }
+
+        .card:hover {
+            border-color: rgba(129, 140, 248, .2);
+            box-shadow: 0 0 30px rgba(129, 140, 248, .06);
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+
+        .card-title .icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            font-size: .9rem;
+        }
+
+        /* ── PREDICTION FORM ────────────────────── */
+        .predict-section {
+            background: linear-gradient(135deg, rgba(99, 102, 241, .12), rgba(244, 114, 182, .08));
+            border: 1px solid rgba(129, 140, 248, .18);
+        }
+
+        .form-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            align-items: flex-end;
+        }
+
+        .form-group {
+            flex: 1;
+            min-width: 180px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: .8rem;
+            font-weight: 500;
+            color: #94a3b8;
+            margin-bottom: .35rem;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+        }
+
+        .form-group input[type="date"] {
+            width: 100%;
+            padding: .65rem .9rem;
+            border: 1px solid rgba(255, 255, 255, .1);
+            border-radius: 10px;
+            background: rgba(15, 23, 42, .7);
+            color: #e2e8f0;
+            font-family: inherit;
+            font-size: .9rem;
+            outline: none;
+            transition: border-color .2s, box-shadow .2s;
+        }
+
+        .form-group input[type="date"]:focus {
+            border-color: #818cf8;
+            box-shadow: 0 0 0 3px rgba(129, 140, 248, .15);
+        }
+
+        /* Webkit date picker icon */
+        .form-group input[type="date"]::-webkit-calendar-picker-indicator {
+            filter: invert(.7);
+        }
+
+        .btn-predict {
+            padding: .65rem 2rem;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #818cf8, #6366f1);
+            color: #fff;
+            font-family: inherit;
+            font-size: .9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform .15s, box-shadow .2s;
+            white-space: nowrap;
+        }
+
+        .btn-predict:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(99, 102, 241, .35);
+        }
+
+        .btn-predict:active {
+            transform: translateY(0);
+        }
+
+        .btn-predict:disabled {
+            opacity: .6;
+            cursor: wait;
+        }
+
+        /* ── STATS ROW ──────────────────────────── */
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stat-card {
+            background: rgba(15, 23, 42, .55);
+            border: 1px solid rgba(255, 255, 255, .06);
+            border-radius: 14px;
+            padding: 1.2rem 1.4rem;
+            text-align: center;
+            transition: transform .2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-3px);
+        }
+
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #6ee7b7, #34d399);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: .78rem;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            margin-top: .25rem;
+        }
+
+        /* ── CHART GRID ─────────────────────────── */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(520px, 1fr));
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 600px) {
+            .chart-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .chart-card .plotly-graph-div {
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        /* ── PREDICTION RESULTS ─────────────────── */
+        #prediction-results {
+            display: none;
+            animation: fadeIn .5s ease;
+        }
+
+        #prediction-results.show {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ── TABLE ──────────────────────────────── */
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: .88rem;
+        }
+
+        .data-table thead th {
+            text-align: left;
+            padding: .7rem 1rem;
+            font-weight: 600;
+            font-size: .75rem;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: #94a3b8;
+            border-bottom: 1px solid rgba(255, 255, 255, .08);
+        }
+
+        .data-table tbody tr {
+            transition: background .15s;
+        }
+
+        .data-table tbody tr:hover {
+            background: rgba(129, 140, 248, .06);
+        }
+
+        .data-table td {
+            padding: .6rem 1rem;
+            border-bottom: 1px solid rgba(255, 255, 255, .04);
+        }
+
+        /* ── LOADING SPINNER ────────────────────── */
+        .spinner {
+            display: none;
+            width: 22px;
+            height: 22px;
+            border: 3px solid rgba(255, 255, 255, .15);
+            border-top-color: #818cf8;
+            border-radius: 50%;
+            animation: spin .6s linear infinite;
+            margin-left: .8rem;
+        }
+
+        .spinner.active {
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ── SECTION TITLES ─────────────────────── */
+        .section-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 1.2rem;
+            padding-left: .2rem;
+        }
+
+        .section-title span {
+            background: linear-gradient(135deg, #818cf8, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* ── ERROR TOAST ────────────────────────── */
+        .toast-error {
+            display: none;
+            background: rgba(239, 68, 68, .15);
+            border: 1px solid rgba(239, 68, 68, .3);
+            color: #fca5a5;
+            padding: .7rem 1.2rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            font-size: .88rem;
+        }
+
+        .toast-error.show {
+            display: block;
+            animation: fadeIn .3s ease;
+        }
+
+        /* ── NAV TABS ───────────────────────────── */
+        .tab-nav {
+            display: flex;
+            gap: .5rem;
+            margin-bottom: 1.5rem;
+            flex-wrap: wrap;
+        }
+
+        .tab-btn {
+            padding: .5rem 1.2rem;
+            border: 1px solid rgba(255, 255, 255, .08);
+            border-radius: 10px;
+            background: rgba(15, 23, 42, .5);
+            color: #94a3b8;
+            font-family: inherit;
+            font-size: .82rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .tab-btn:hover {
+            border-color: rgba(129, 140, 248, .3);
+            color: #e2e8f0;
+        }
+
+        .tab-btn.active {
+            background: rgba(129, 140, 248, .15);
+            border-color: rgba(129, 140, 248, .35);
+            color: #818cf8;
+        }
+
+        /* ── TAB PANELS ─────────────────────────── */
+        .chart-tab-panel {
+            display: none;
+            animation: fadeIn .4s ease;
+        }
+
+        .chart-tab-panel.active {
+            display: block;
+        }
+
+        /* ── EMPTY STATE ────────────────────────── */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: #64748b;
+        }
+
+        .empty-state .empty-icon {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            opacity: .5;
+        }
+
+        .empty-state h3 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #94a3b8;
+            margin-bottom: .5rem;
+        }
+
+        .empty-state p {
+            font-size: .9rem;
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        /* ── FOOTER ─────────────────────────────── */
+        .footer {
+            text-align: center;
+            padding: 2rem 1rem;
+            font-size: .78rem;
+            color: #475569;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ── HERO ─────────────────────────────── -->
+    <header class="hero">
+        <h1>🌧️ Precipitation Predictor</h1>
+        <p>Machine-learning powered climate prediction dashboard · Fully offline</p>
+        <div class="badge">XGBoost · Daily NetCDF Data · Lag Features</div>
+    </header>
+
+    <main class="container">
+
+        <!-- ── STATS ────────────────────────────── -->
+        <div class="stats-row">
+            <div class="stat-card" id="stat-range">
+                <div class="stat-value">{{ data_info.start[:4] }}–{{ data_info.end[:4] }}</div>
+                <div class="stat-label">Training Data Range</div>
+            </div>
+            <div class="stat-card" id="stat-records">
+                <div class="stat-value">{{ data_info.records }}</div>
+                <div class="stat-label">Training Records</div>
+            </div>
+            <div class="stat-card" id="stat-model">
+                <div class="stat-value">XGB-500</div>
+                <div class="stat-label">Model (500 Trees)</div>
+            </div>
+            <div class="stat-card" id="stat-status">
+                <div class="stat-value"
+                    style="background: linear-gradient(135deg,#818cf8,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;">
+                    Ready</div>
+                <div class="stat-label">Prediction Status</div>
+            </div>
+        </div>
+
+        <!-- ── PREDICTION FORM ──────────────────── -->
+        <div class="card predict-section" id="predict-form-card">
+            <div class="card-title">
+                <div class="icon" style="background:rgba(129,140,248,.15);color:#818cf8;">🔮</div>
+                Predict Future Precipitation
+            </div>
+            <form id="predict-form" class="form-row">
+                <div class="form-group">
+                    <label for="start_date">Start Date</label>
+                    <input type="date" id="start_date" name="start_date" value="2026-01-01" required>
+                </div>
+                <div class="form-group">
+                    <label for="end_date">End Date</label>
+                    <input type="date" id="end_date" name="end_date" value="2027-12-31" required>
+                </div>
+                <div class="form-group" style="min-width: 150px;">
+                    <label>Prediction Level</label>
+                    <div style="display: flex; gap: 10px; margin-top: 5px;">
+                        <label><input type="radio" name="pred_mode" value="state" checked onchange="toggleMode()"> State</label>
+                        <label><input type="radio" name="pred_mode" value="district" onchange="toggleMode()"> District</label>
+                    </div>
+                </div>
+                <div class="form-group" id="state-select-group" style="min-width: 200px;">
+                    <label for="states">Select States</label>
+                    <input type="text" id="state-search" placeholder="Search states..." style="width:100%; padding:0.4rem; margin-bottom:5px; border-radius:6px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); color:white; font-size:0.8rem; outline:none;">
+                    <select id="states" name="states" multiple style="width: 100%; height: 80px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #e2e8f0; border-radius: 6px; padding: 0.5rem;">
+                        <option value="All States" selected>All States</option>
+                        {% for state in data_info.states %}
+                        <option value="{{ state }}">{{ state }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" id="district-select-group" style="min-width: 200px; display: none;">
+                    <label for="districts">Select Districts</label>
+                    <input type="text" id="district-search" placeholder="Search districts or states..." style="width:100%; padding:0.4rem; margin-bottom:5px; border-radius:6px; background:rgba(0,0,0,0.3); border:1px solid rgba(255,255,255,0.1); color:white; font-size:0.8rem; outline:none;">
+                    <select id="districts" name="districts" multiple style="width: 100%; height: 80px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #e2e8f0; border-radius: 6px; padding: 0.5rem;">
+                        {% for state, dists in data_info.districts.items() %}
+                            <optgroup label="{{ state }}">
+                                {% for dist in dists %}
+                                    <option value="{{ state }}|{{ dist }}">{{ dist }}</option>
+                                {% endfor %}
+                            </optgroup>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div style="display:flex;align-items:center;">
+                    <button type="submit" class="btn-predict" id="btn-predict">
+                        Generate Prediction
+                    </button>
+                    <div class="spinner" id="spinner"></div>
+                </div>
+            </form>
+        </div>
+
+        <!-- ── ERROR TOAST ──────────────────────── -->
+        <div class="toast-error" id="error-toast"></div>
+
+        <!-- ── EMPTY STATE (shown before prediction) ── -->
+        <div id="empty-state" class="card">
+            <div class="empty-state">
+                <div class="empty-icon">📊</div>
+                <h3>No Predictions Yet</h3>
+                <p>Select a date range above and click "Generate Prediction" to see precipitation forecasts and charts.</p>
+            </div>
+        </div>
+
+        <!-- ── PREDICTION RESULTS (hidden until prediction) ── -->
+        <div id="prediction-results">
+
+            <h2 class="section-title"><span>📈 Prediction Charts</span></h2>
+
+            <!-- Tab navigation for prediction charts -->
+            <div class="tab-nav" id="chart-tabs">
+                <button class="tab-btn active" data-tab="ptab-line">Trend Line</button>
+                <button class="tab-btn" data-tab="ptab-bar">Monthly Average</button>
+                <button class="tab-btn" data-tab="ptab-season">Seasonal</button>
+                <button class="tab-btn" data-tab="ptab-heatmap">Heatmap</button>
+                <button class="tab-btn" data-tab="ptab-combined">Historical vs Predicted</button>
+                <button class="tab-btn" data-tab="ptab-all">Show All</button>
+            </div>
+
+            <!-- Tab panels (populated dynamically via JS) -->
+            <div id="ptab-line" class="chart-tab-panel active">
+                <div class="card chart-card" id="chart-pred-line"></div>
+            </div>
+            <div id="ptab-bar" class="chart-tab-panel">
+                <div class="card chart-card" id="chart-pred-bar"></div>
+            </div>
+            <div id="ptab-season" class="chart-tab-panel">
+                <div class="card chart-card" id="chart-pred-seasonal"></div>
+            </div>
+            <div id="ptab-heatmap" class="chart-tab-panel">
+                <div class="card chart-card" id="chart-pred-heatmap"></div>
+            </div>
+            <div id="ptab-combined" class="chart-tab-panel">
+                <div class="card chart-card" id="chart-combined"></div>
+            </div>
+            <div id="ptab-all" class="chart-tab-panel">
+                <div class="chart-grid">
+                    <div class="card chart-card" id="chart-all-line"></div>
+                    <div class="card chart-card" id="chart-all-bar"></div>
+                    <div class="card chart-card" id="chart-all-seasonal"></div>
+                    <div class="card chart-card" id="chart-all-combined"></div>
+                </div>
+                <div class="card chart-card" id="chart-all-heatmap" style="margin-top:1.5rem;"></div>
+                <div class="card chart-card" id="chart-state-compare" style="display:none; margin-top:1.5rem;"></div>
+            </div>
+
+            <!-- Prediction table -->
+            <div class="card" id="prediction-table-card">
+                <div class="card-title">
+                    <div class="icon" style="background:rgba(244,114,182,.15);color:#f472b6;">📋</div>
+                    Predicted Monthly Summary
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="data-table" id="prediction-table">
+                        <thead>
+                            <tr>
+                                <th>Target</th>
+                                <th>Month</th>
+                                <th>Avg (mm/day)</th>
+                                <th>Min (mm/day)</th>
+                                <th>Max (mm/day)</th>
+                                <th>Total (mm)</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Extreme Events table (Shown only for single state) -->
+            <div class="card" id="extreme-events-card" style="display:none; margin-top: 1.5rem; border-left: 4px solid #ef4444;">
+                <div class="card-title">
+                    <div class="icon" style="background:rgba(239,68,68,.15);color:#ef4444;">⚠️</div>
+                    Extreme Precipitation Events (> 64.5 mm/day)
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="data-table" id="extreme-events-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>District</th>
+                                <th>Predicted (mm/day)</th>
+                                <th>Category</th>
+                                <th>Warning Level</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <p id="no-extreme-events" style="display:none; padding: 1rem; color: #94a3b8; font-size: 0.9rem;">No extreme events predicted for the selected target in this timeframe.</p>
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="footer">
+        Precipitation Predictor · Built with Flask, Plotly &amp; XGBoost · Daily Data · Runs 100% offline
+    </footer>
+
+    <script>
+        function toggleMode() {
+            const mode = document.querySelector('input[name="pred_mode"]:checked').value;
+            if (mode === 'state') {
+                document.getElementById('state-select-group').style.display = 'block';
+                document.getElementById('district-select-group').style.display = 'none';
+            } else {
+                document.getElementById('state-select-group').style.display = 'none';
+                document.getElementById('district-select-group').style.display = 'block';
+            }
+        }
+        
+        /* ── HELPER: inject HTML and execute its <script> tags ── */
+        function setInnerHTML(el, html) {
+            el.innerHTML = html;
+            // innerHTML does NOT execute <script> tags — we must do it manually
+            const scripts = el.querySelectorAll('script');
+            scripts.forEach(oldScript => {
+                const newScript = document.createElement('script');
+                // Copy attributes (e.g. type, src)
+                Array.from(oldScript.attributes).forEach(attr =>
+                    newScript.setAttribute(attr.name, attr.value)
+                );
+                // Copy inline script content
+                newScript.textContent = oldScript.textContent;
+                oldScript.parentNode.replaceChild(newScript, oldScript);
+            });
+        }
+
+        /* ── TAB SWITCHING ──────────────────────── */
+        function setupTabs() {
+            const tabBtns = document.querySelectorAll('.tab-btn');
+            const tabPanels = document.querySelectorAll('.chart-tab-panel');
+
+            tabBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    tabBtns.forEach(b => b.classList.remove('active'));
+                    tabPanels.forEach(p => p.classList.remove('active'));
+                    btn.classList.add('active');
+                    const panel = document.getElementById(btn.dataset.tab);
+                    panel.classList.add('active');
+
+                    // Lazy-render "Show All" tab: inject charts only when tab is visible
+                    if (btn.dataset.tab === 'ptab-all' && window._chartCache && !window._showAllRendered) {
+                        setInnerHTML(document.getElementById('chart-all-line'), window._chartCache.pred_line);
+                        setInnerHTML(document.getElementById('chart-all-bar'), window._chartCache.pred_bar);
+                        setInnerHTML(document.getElementById('chart-all-seasonal'), window._chartCache.pred_seasonal);
+                        setInnerHTML(document.getElementById('chart-all-combined'), window._chartCache.combined);
+                        setInnerHTML(document.getElementById('chart-all-heatmap'), window._chartCache.pred_heatmap);
+                        
+                        const compareContainer = document.getElementById('chart-state-compare');
+                        if (window._chartCache.state_compare) {
+                            compareContainer.style.display = 'block';
+                            setInnerHTML(compareContainer, window._chartCache.state_compare);
+                        } else {
+                            compareContainer.style.display = 'none';
+                        }
+                        
+                        window._showAllRendered = true;
+                    }
+
+                    // Resize existing Plotly charts in the panel
+                    setTimeout(() => {
+                        panel.querySelectorAll('.js-plotly-plot').forEach(plot => {
+                            if (window.Plotly) Plotly.Plots.resize(plot);
+                        });
+                    }, 200);
+                });
+            });
+        }
+        setupTabs();
+
+        /* ── PREDICTION FORM (AJAX) ────────────── */
+        const form = document.getElementById('predict-form');
+        const spinner = document.getElementById('spinner');
+        const btn = document.getElementById('btn-predict');
+        const results = document.getElementById('prediction-results');
+        const emptyState = document.getElementById('empty-state');
+        const errToast = document.getElementById('error-toast');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errToast.classList.remove('show');
+            spinner.classList.add('active');
+            btn.disabled = true;
+            btn.textContent = 'Training model…';
+
+            const formData = new FormData(form);
+            try {
+                const resp = await fetch('/predict', { method: 'POST', body: formData });
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    throw new Error(data.error || 'Something went wrong.');
+                }
+
+                // Inject charts using setInnerHTML so Plotly scripts execute
+                setInnerHTML(document.getElementById('chart-pred-line'), data.charts.pred_line);
+                setInnerHTML(document.getElementById('chart-pred-bar'), data.charts.pred_bar);
+                setInnerHTML(document.getElementById('chart-pred-seasonal'), data.charts.pred_seasonal);
+                setInnerHTML(document.getElementById('chart-pred-heatmap'), data.charts.pred_heatmap);
+                setInnerHTML(document.getElementById('chart-combined'), data.charts.combined);
+
+                // Store chart HTML for lazy "Show All" tab rendering
+                window._chartCache = data.charts;
+                window._showAllRendered = false;
+
+                // Render table (monthly summary: avg/min/max/total)
+                const tbody = document.querySelector('#prediction-table tbody');
+                tbody.innerHTML = '';
+                data.table.forEach(row => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${row.state}</td><td>${row.date}</td><td>${row.avg}</td><td>${row.min}</td><td>${row.max}</td><td>${row.total}</td>`;
+                    tbody.appendChild(tr);
+                });
+
+                // Render Extreme Events
+                const extremeCard = document.getElementById('extreme-events-card');
+                const extremeTbody = document.querySelector('#extreme-events-table tbody');
+                const noExtremeMsg = document.getElementById('no-extreme-events');
+                
+                if (data.extreme_events && data.extreme_events.length > 0) {
+                    extremeCard.style.display = 'block';
+                    document.getElementById('extreme-events-table').style.display = 'table';
+                    noExtremeMsg.style.display = 'none';
+                    extremeTbody.innerHTML = '';
+                    data.extreme_events.forEach(ev => {
+                        const tr = document.createElement('tr');
+                        
+                        let color = '#f59e0b'; // Warning (orange)
+                        let bgStyle = '';
+                        let icon = '⚠️';
+                        
+                        if (ev.level === 'Alert') {
+                            color = '#ef4444'; // Red
+                            bgStyle = 'background: rgba(239,68,68,0.1); border-left: 2px solid #ef4444;';
+                        } else if (ev.level === 'Emergency') {
+                            color = '#991b1b'; // Dark Red
+                            bgStyle = 'background: rgba(153,27,27,0.1); border-left: 3px solid #991b1b;';
+                            icon = '🚨';
+                        }
+                        
+                        tr.style = bgStyle;
+                        tr.innerHTML = `<td style="color:${color}; font-weight:600;">${ev.date}</td>
+                                        <td>${ev.district}</td>
+                                        <td style="color:${color}; font-weight:600;">${ev.predicted_pr}</td>
+                                        <td style="color:${color}; font-weight:600;">${ev.category}</td>
+                                        <td style="color:${color}; font-weight:bold;">${ev.level} ${icon}</td>`;
+                        extremeTbody.appendChild(tr);
+                    });
+                } else if (data.extreme_events && data.extreme_events.length === 0 && !data.multi_state && data.pred_mode === 'state' && formData.getAll("states").length === 1 && formData.get("states") !== "All States") {
+                    extremeCard.style.display = 'block';
+                    document.getElementById('extreme-events-table').style.display = 'none';
+                    noExtremeMsg.style.display = 'block';
+                } else {
+                    extremeCard.style.display = 'none';
+                }
+
+                // Show results, hide empty state
+                emptyState.style.display = 'none';
+                results.classList.add('show');
+                results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+                // Update status
+                document.querySelector('#stat-status .stat-value').textContent = '✓ Done';
+
+                // Trigger resize after a short delay to ensure Plotly renders properly
+                setTimeout(() => window.dispatchEvent(new Event('resize')), 300);
+
+            } catch (err) {
+                errToast.textContent = '⚠️ ' + err.message;
+                errToast.classList.add('show');
+            } finally {
+                spinner.classList.remove('active');
+                btn.disabled = false;
+                btn.textContent = 'Generate Prediction';
+            }
+        });
+
+        // Search functionality for States and Districts
+        function setupSearch(searchId, selectId) {
+            const searchInput = document.getElementById(searchId);
+            const select = document.getElementById(selectId);
+            
+            searchInput.addEventListener('input', function() {
+                const query = this.value.toLowerCase();
+                const optgroups = select.getElementsByTagName('optgroup');
+                const options = select.getElementsByTagName('option');
+                
+                // Handle direct options (like in States)
+                for (let i = 0; i < options.length; i++) {
+                    const opt = options[i];
+                    if (opt.parentElement.tagName !== 'OPTGROUP') {
+                        const text = opt.textContent.toLowerCase();
+                        opt.style.display = text.includes(query) ? '' : 'none';
+                    }
+                }
+                
+                // Handle optgroups and their child options (like in Districts)
+                for (let i = 0; i < optgroups.length; i++) {
+                    const group = optgroups[i];
+                    const label = group.label.toLowerCase();
+                    const groupOptions = group.getElementsByTagName('option');
+                    let groupMatch = label.includes(query);
+                    let anyOptionVisible = false;
+                    
+                    for (let j = 0; j < groupOptions.length; j++) {
+                        const opt = groupOptions[j];
+                        const text = opt.textContent.toLowerCase();
+                        const show = groupMatch || text.includes(query);
+                        opt.style.display = show ? '' : 'none';
+                        if (show) anyOptionVisible = true;
+                    }
+                    
+                    group.style.display = anyOptionVisible ? '' : 'none';
+                }
+            });
+        }
+        
+        setupSearch('state-search', 'states');
+        setupSearch('district-search', 'districts');
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,10 @@
+flask
+xarray
+pandas
+numpy
+plotly
+scikit-learn
+netCDF4
+gunicorn
+xgboost
+cftime

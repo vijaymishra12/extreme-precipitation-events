@@ -1,0 +1,19 @@
+# Virtual environment
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# NetCDF data files (too large for GitHub, will need separate hosting)
+*.nc
+*.nc.backup
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

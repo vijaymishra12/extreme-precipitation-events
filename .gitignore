@@ -6,10 +6,6 @@ venv/
 __pycache__/
 *.pyc
 
-# NetCDF data files (too large for GitHub, will need separate hosting)
-*.nc
-*.nc.backup
-
 # OS files
 .DS_Store
 Thumbs.db
@@ -17,3 +13,15 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Unused duplicate/merged NC files (not needed by app.py)
+precipitation.nc
+precipitation1.nc
+precipitation_merged.nc
+specific humidity.nc
+specific humidity1.nc
+specific humidity_merged.nc
+surface temperature.nc
+surface temperature1.nc
+surface temperature_merged.nc
+*.nc.backup

@@ -24,6 +24,7 @@ import plotly.io as pio
 from xgboost import XGBRegressor
 import json
 import os
+import traceback
 
 # ──────────────────────────────────────────────
 # ▸  CONFIGURATION
@@ -516,137 +517,142 @@ def home():
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    start_date = request.form.get("start_date")
-    end_date   = request.form.get("end_date")
-    selected   = request.form.getlist("states")  # list of state names
-
-    if not start_date or not end_date:
-        return jsonify({"error": "Please provide both start and end dates."}), 400
-
     try:
-        pd.Timestamp(start_date)
-        pd.Timestamp(end_date)
-    except Exception:
-        return jsonify({"error": "Invalid date format."}), 400
+        start_date = request.form.get("start_date")
+        end_date   = request.form.get("end_date")
+        selected   = request.form.getlist("states")  # list of state names
 
-    pred_mode = request.form.get("pred_mode", "state")
-    selected_states = request.form.getlist("states")
-    selected_districts = request.form.getlist("districts")
+        if not start_date or not end_date:
+            return jsonify({"error": "Please provide both start and end dates."}), 400
 
-    df, dist_df, state_names = load_data()
-    model = train_model(df)
+        try:
+            pd.Timestamp(start_date)
+            pd.Timestamp(end_date)
+        except Exception:
+            return jsonify({"error": "Invalid date format."}), 400
 
-    all_preds_df = pd.DataFrame()
-    selected_names = []
+        pred_mode = request.form.get("pred_mode", "state")
+        selected_states = request.form.getlist("states")
+        selected_districts = request.form.getlist("districts")
 
-    if pred_mode == "state":
-        if not selected_states or "All States" in selected_states:
-            selected_states = state_names
-        selected_names = selected_states
-        
-        targets = []
-        for sname in selected_states:
-            sid = list(STATES.keys()).index(sname)
-            targets.append((sname, sid, df[df["state"] == sname]))
-        
-        all_preds_df = predict_batch(model, df, targets, start_date, end_date)
+        df, dist_df, state_names = load_data()
+        model = train_model(df)
+
+        all_preds_df = pd.DataFrame()
+        selected_names = []
+
+        if pred_mode == "state":
+            if not selected_states or "All States" in selected_states:
+                selected_states = state_names
+            selected_names = selected_states
+            
+            targets = []
+            for sname in selected_states:
+                sid = list(STATES.keys()).index(sname)
+                targets.append((sname, sid, df[df["state"] == sname]))
+            
+            all_preds_df = predict_batch(model, df, targets, start_date, end_date)
+                    
+        else:
+            # District mode
+            if not selected_districts:
+                return jsonify({"error": "Please select at least one district."}), 400
                 
-    else:
-        # District mode
-        if not selected_districts:
-            return jsonify({"error": "Please select at least one district."}), 400
-            
-        targets = []
-        for dist_val in selected_districts:
-            sname, dname = dist_val.split("|")
-            selected_names.append(dname)
-            sid = list(STATES.keys()).index(sname)
-            
-            tmp_df = dist_df[dist_df["district"] == dname].copy()
-            targets.append((dname, sid, tmp_df))
-            
-        all_preds_df = predict_batch(model, dist_df, targets, start_date, end_date)
+            targets = []
+            for dist_val in selected_districts:
+                sname, dname = dist_val.split("|")
+                selected_names.append(dname)
+                sid = list(STATES.keys()).index(sname)
+                
+                tmp_df = dist_df[dist_df["district"] == dname].copy()
+                targets.append((dname, sid, tmp_df))
+                
+            all_preds_df = predict_batch(model, dist_df, targets, start_date, end_date)
 
-    if all_preds_df.empty:
-        return jsonify({"error": "Prediction failed for selection."}), 400
+        if all_preds_df.empty:
+            return jsonify({"error": "Prediction failed for selection."}), 400
 
-    future = all_preds_df
-    
-    # Add severity category for coloring in graphs
-    def get_category(pr):
-        if pr >= 204.5: return "Extremely Heavy Rain"
-        elif pr >= 115.6: return "Very Heavy Rain"
-        elif pr >= 64.5: return "Heavy Rain"
-        else: return "Normal/Moderate"
+        future = all_preds_df
         
-    future["Category"] = future["predicted_pr"].apply(get_category)
+        # Add severity category for coloring in graphs
+        def get_category(pr):
+            if pr >= 204.5: return "Extremely Heavy Rain"
+            elif pr >= 115.6: return "Very Heavy Rain"
+            elif pr >= 64.5: return "Heavy Rain"
+            else: return "Normal/Moderate"
+            
+        future["Category"] = future["predicted_pr"].apply(get_category)
 
-    # Build charts
-    pred_charts = {
-        "pred_line":     build_pred_line(future),
-        "pred_bar":      build_pred_bar(future),
-        "pred_seasonal": build_pred_seasonal(future),
-        "pred_heatmap":  build_pred_heatmap(future),
-    }
-    
-    # Use selected_names for combined chart
-    if pred_mode == "state":
-        pred_charts["combined"] = build_combined_chart(future, df, selected_names)
-    else:
-        tmp_dist = dist_df.copy()
-        tmp_dist["state"] = tmp_dist["district"]
-        pred_charts["combined"] = build_combined_chart(future, tmp_dist, selected_names)
+        # Build charts
+        pred_charts = {
+            "pred_line":     build_pred_line(future),
+            "pred_bar":      build_pred_bar(future),
+            "pred_seasonal": build_pred_seasonal(future),
+            "pred_heatmap":  build_pred_heatmap(future),
+        }
+        
+        # Use selected_names for combined chart
+        if pred_mode == "state":
+            pred_charts["combined"] = build_combined_chart(future, df, selected_names)
+        else:
+            tmp_dist = dist_df.copy()
+            tmp_dist["state"] = tmp_dist["district"]
+            pred_charts["combined"] = build_combined_chart(future, tmp_dist, selected_names)
 
-    # Add comparison chart if multiple items
-    if len(selected_names) > 1:
-        pred_charts["state_compare"] = build_state_comparison_bar(future)
+        # Add comparison chart if multiple items
+        if len(selected_names) > 1:
+            pred_charts["state_compare"] = build_state_comparison_bar(future)
 
-    # Monthly summary table
-    table_rows = []
-    for name in selected_names:
-        state_pred = future[future["state"] == name]
-        monthly = state_pred.groupby(
-            state_pred["time"].dt.to_period("M")
-        )["predicted_pr"].agg(["mean", "min", "max", "sum"]).reset_index()
-
-        for _, row in monthly.iterrows():
-            table_rows.append({
-                "state": name,
-                "date":  str(row["time"]),
-                "avg":   f"{row['mean']:.2f}",
-                "min":   f"{row['min']:.2f}",
-                "max":   f"{row['max']:.2f}",
-                "total": f"{row['sum']:.1f}",
-            })
-
-    # Extreme events calculation
-    extreme_events = []
-    if pred_mode == "state" and len(selected_names) == 1:
-        sid = list(STATES.keys()).index(selected_names[0])
-        extreme_events = find_extreme_events(model, dist_df, selected_names[0], sid, start_date, end_date)
-    elif pred_mode == "district":
-        # Already calculated in future_all if we want to filter them
+        # Monthly summary table
+        table_rows = []
         for name in selected_names:
-            p_df = future[future["state"] == name]
-            ext = p_df[p_df["predicted_pr"] >= 64.5]
-            for _, row in ext.iterrows():
-                pr_val = round(row["predicted_pr"], 2)
-                if pr_val >= 204.5: cat, lvl = "Extremely Heavy Rain", "Emergency"
-                elif pr_val >= 115.6: cat, lvl = "Very Heavy Rain", "Alert"
-                else: cat, lvl = "Heavy Rain", "Warning"
-                extreme_events.append({
-                    "date": str(row["time"].date()), "district": name,
-                    "predicted_pr": pr_val, "category": cat, "level": lvl
-                })
-        extreme_events.sort(key=lambda x: x["date"])
+            state_pred = future[future["state"] == name]
+            monthly = state_pred.groupby(
+                state_pred["time"].dt.to_period("M")
+            )["predicted_pr"].agg(["mean", "min", "max", "sum"]).reset_index()
 
-    return jsonify({
-        "charts": pred_charts,
-        "table": table_rows,
-        "multi_state": len(selected_names) > 1,
-        "extreme_events": extreme_events,
-        "pred_mode": pred_mode
-    })
+            for _, row in monthly.iterrows():
+                table_rows.append({
+                    "state": name,
+                    "date":  str(row["time"]),
+                    "avg":   f"{row['mean']:.2f}",
+                    "min":   f"{row['min']:.2f}",
+                    "max":   f"{row['max']:.2f}",
+                    "total": f"{row['sum']:.1f}",
+                })
+
+        # Extreme events calculation
+        extreme_events = []
+        if pred_mode == "state" and len(selected_names) == 1:
+            sid = list(STATES.keys()).index(selected_names[0])
+            extreme_events = find_extreme_events(model, dist_df, selected_names[0], sid, start_date, end_date)
+        elif pred_mode == "district":
+            # Already calculated in future_all if we want to filter them
+            for name in selected_names:
+                p_df = future[future["state"] == name]
+                ext = p_df[p_df["predicted_pr"] >= 64.5]
+                for _, row in ext.iterrows():
+                    pr_val = round(row["predicted_pr"], 2)
+                    if pr_val >= 204.5: cat, lvl = "Extremely Heavy Rain", "Emergency"
+                    elif pr_val >= 115.6: cat, lvl = "Very Heavy Rain", "Alert"
+                    else: cat, lvl = "Heavy Rain", "Warning"
+                    extreme_events.append({
+                        "date": str(row["time"].date()), "district": name,
+                        "predicted_pr": pr_val, "category": cat, "level": lvl
+                    })
+            extreme_events.sort(key=lambda x: x["date"])
+
+        return jsonify({
+            "charts": pred_charts,
+            "table": table_rows,
+            "multi_state": len(selected_names) > 1,
+            "extreme_events": extreme_events,
+            "pred_mode": pred_mode
+        })
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
 # ──────────────────────────────────────────────

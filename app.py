@@ -25,6 +25,7 @@ from xgboost import XGBRegressor
 import json
 import os
 import traceback
+import gc
 
 # ──────────────────────────────────────────────
 # ▸  CONFIGURATION
@@ -176,9 +177,18 @@ def load_data():
         district_frames.append(ddf.dropna().reset_index(drop=True))
 
     pr.close(); ts.close(); hus.close()
+    del pr, ts, hus
+    gc.collect()
 
     combined = pd.concat(all_frames, ignore_index=True)
     combined_districts = pd.concat(district_frames, ignore_index=True)
+
+    # Downcast to float32 to save memory
+    for col in combined.select_dtypes(include=['float64']).columns:
+        combined[col] = combined[col].astype(np.float32)
+    for col in combined_districts.select_dtypes(include=['float64']).columns:
+        combined_districts[col] = combined_districts[col].astype(np.float32)
+
     _cache["all_data"]   = combined
     _cache["district_data"] = combined_districts
     _cache["state_list"] = state_names
@@ -204,16 +214,18 @@ def train_model(df):
     y = df[VAR_PR].values
 
     model = XGBRegressor(
-        n_estimators=500,
-        max_depth=6,
-        learning_rate=0.05,
+        n_estimators=100,
+        max_depth=4,
+        learning_rate=0.1,
         subsample=0.8,
         colsample_bytree=0.8,
         random_state=42,
-        n_jobs=-1 # Use all cores
+        n_jobs=1,
+        tree_method="hist",
     )
     model.fit(X, y)
     _cache["model"] = model
+    gc.collect()
     return model
 
 
